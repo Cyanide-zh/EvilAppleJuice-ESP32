@@ -1,53 +1,109 @@
 // This example takes heavy inpsiration from the ESP32 example by ronaldstoner
 // Based on the previous work of chipik / _hexway / ECTO-1A & SAY-10
-// See the README for more info
+// Thanks to ckcr4lyf and many others
+// Load Wi-Fi library
+#include <WiFi.h>
+#include <WebServer.h>
 #include <Arduino.h>
-
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include <esp_arduino_version.h>
-
 #include "devices.hpp"
-
-// Bluetooth maximum transmit power
-#if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32C2) || defined(CONFIG_IDF_TARGET_ESP32S3)
-#define MAX_TX_POWER ESP_PWR_LVL_P21  // ESP32C3 ESP32C2 ESP32S3
-#elif defined(CONFIG_IDF_TARGET_ESP32H2) || defined(CONFIG_IDF_TARGET_ESP32C6)
-#define MAX_TX_POWER ESP_PWR_LVL_P20  // ESP32H2 ESP32C6
-#else
-#define MAX_TX_POWER ESP_PWR_LVL_P9   // Default
-#endif
-
 BLEAdvertising *pAdvertising;  // global variable
-uint32_t delayMilliseconds = 1000;
+uint32_t delaySeconds = 1;
+// Replace with your AP credentials
+const char* ssid = "PUA"; //SSID
+const char* password = "12345ttttt"; //Password
+const int ledPin = 2; // GPIO pins connected to the board
+bool ledState = false; // LED status now
+// Set web server port number to 8184
+WebServer server(8184);
+
+// Variable to store the HTTP request
+String header;
+
+// Auxiliar variables to store the current output state
+String output26State = "off";
+String output27State = "off";
+
+// Assign output variables to GPIO pins
+const int output26 = 26;
+const int output27 = 27;
+
+// Current time
+unsigned long currentTime = millis();
+// Previous time
+unsigned long previousTime = 0; 
+// Define timeout time in milliseconds (example: 2000ms = 2s)
+const long timeoutTime = 2000;
+
+
+// HTML for the web page
+const char* htmlPage = R"rawliteral(
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP32 Control</title><style>body{font-family:Arial,sans-serif;text-align:center;margin-top:50px}.button{background-color:#4CAF50;border:none;color:white;padding:15px 32px;text-align:center;text-decoration:none;display:inline-block;font-size:16px;margin:4px 2px;cursor:pointer;border-radius:8px}.button.off{background-color:#f44336}.state{font-size:24px;margin-top:20px}</style></head><body><h1>ESP32 AP Mode Control</h1><p class="state">LED is: <span id="ledStatus">%LED_STATE%</span></p><button class="button %BUTTON_COLOR%" onclick="toggleLED()">Turn %BUTTON_TEXT%</button><script>function toggleLED(){var x=new XMLHttpRequest();x.onreadystatechange=function(){if(this.readyState==4&&this.status==200){document.getElementById("ledStatus").innerHTML=this.responseText;var b=document.querySelector(".button");if(this.responseText==="ON"){b.classList.remove("off");b.innerHTML="Turn OFF"}else{b.classList.add("off");b.innerHTML="Turn ON"}}};x.open("GET","/toggle",true);x.send()}window.onload=function(){var x=new XMLHttpRequest();x.onreadystatechange=function(){if(this.readyState==4&&this.status==200){document.getElementById("ledStatus").innerHTML=this.responseText;var b=document.querySelector(".button");if(this.responseText==="ON"){b.classList.remove("off");b.innerHTML="Turn OFF"}else{b.classList.add("off");b.innerHTML="Turn ON"}}};x.open("GET","/state",true);x.send()};</script></body></html>
+)rawliteral";
+
+
+// Function to handle the root URL "/"
+void handleRoot() {
+  String s = String(htmlPage);
+  s.replace("%LED_STATE%", ledState ? "ON" : "OFF");
+  s.replace("%BUTTON_TEXT%", ledState ? "OFF" : "ON");
+  s.replace("%BUTTON_COLOR%", ledState ? "" : "off"); // Add 'off' class for red button
+  server.send(200, "text/html", s);
+}
+
+// Function to handle the "/toggle" URL
+void handleToggle() {
+  if (ledState == true) {
+    ledState = false;
+    BLEDevice::deinit();
+	//turn off bluetooth and stop
+  } else {
+    ledState = true;
+    BLEDevice::init("AirPods 69"); 
+  //name the fake here 
+	//turn on bluetooth and continue
+  }
+  digitalWrite(ledPin, ledState);
+  server.send(200, "text/plain", ledState ? "ON" : "OFF");
+}
+
+// handle request from "/state"
+void handleState() {
+  server.send(200, "text/plain", ledState ? "ON" : "OFF");
+}
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Starting ESP32 BLE");
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, ledState);
 
-  // This is specific to the AirM2M ESP32 board
-  // https://wiki.luatos.com/chips/esp32c3/board.html
+  Serial.print("Setting up AP (Access Point)...");
+  WiFi.softAP(ssid, password);
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+
+  server.on("/", handleRoot);
+  server.on("/toggle", handleToggle);
+  server.on("/state", handleState);
+
+  server.begin();
+  Serial.println("HTTP server started");
   pinMode(12, OUTPUT);
   pinMode(13, OUTPUT);
-
   BLEDevice::init("AirPods 69");
-
-  // Increase the BLE Power to 21dBm (MAX)
-  // https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-reference/bluetooth/controller_vhci.html
-  esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, MAX_TX_POWER);
-
-  // Create the BLE Server
   BLEServer *pServer = BLEDevice::createServer();
   pAdvertising = pServer->getAdvertising();
-
-  // seems we need to init it with an address in setup() step.
   esp_bd_addr_t null_addr = {0xFE, 0xED, 0xC0, 0xFF, 0xEE, 0x69};
   pAdvertising->setDeviceAddress(null_addr, BLE_ADDR_TYPE_RANDOM);
 }
 
+
 void loop() {
   // Turn lights on during "busy" part
+  server.handleClient();
   digitalWrite(12, HIGH);
   digitalWrite(13, HIGH);
 
@@ -72,22 +128,10 @@ void loop() {
   int device_choice = random(2);
   if (device_choice == 0){
     int index = random(17);
-    #ifdef ESP_ARDUINO_VERSION_MAJOR
-      #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-          oAdvertisementData.addData(String((char*)DEVICES[index], 31));
-      #else
-          oAdvertisementData.addData(std::string((char*)DEVICES[index], 31));
-      #endif
-    #endif
+    oAdvertisementData.addData(std::string((char*)DEVICES[index], 31));
   } else {
-    int index = random(13);
-    #ifdef ESP_ARDUINO_VERSION_MAJOR
-      #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-          oAdvertisementData.addData(String((char*)SHORT_DEVICES[index], 23));
-      #else
-          oAdvertisementData.addData(std::string((char*)SHORT_DEVICES[index], 23));
-      #endif
-    #endif
+    int index = random(17);
+    oAdvertisementData.addData(std::string((char*)DEVICES[index], 31));
   }
 
 /*  Page 191 of Apple's "Accessory Design Guidelines for Apple Devices (Release R20)" recommends to use only one of
@@ -135,20 +179,6 @@ void loop() {
   // Turn lights off while "sleeping"
   digitalWrite(12, LOW);
   digitalWrite(13, LOW);
-  delay(delayMilliseconds); // delay for delayMilliseconds ms
+  delay(delaySeconds * 1000); // delay for delaySeconds seconds
   pAdvertising->stop();
-
-  // Random signal strength increases the difficulty of tracking the signal
-  int rand_val = random(100);  // Generate a random number between 0 and 99
-  if (rand_val < 70) {  // 70% probability
-      esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, MAX_TX_POWER);
-  } else if (rand_val < 85) {  // 15% probability
-      esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, (esp_power_level_t)(MAX_TX_POWER - 1));
-  } else if (rand_val < 95) {  // 10% probability
-      esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, (esp_power_level_t)(MAX_TX_POWER - 2));
-  } else if (rand_val < 99) {  // 4% probability
-      esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, (esp_power_level_t)(MAX_TX_POWER - 3));
-  } else {  // 1% probability
-      esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, (esp_power_level_t)(MAX_TX_POWER - 4));
-  }
 }
