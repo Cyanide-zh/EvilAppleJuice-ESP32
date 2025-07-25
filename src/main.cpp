@@ -40,7 +40,7 @@ const long timeoutTime = 2000;
 
 // HTML for the web page
 const char* htmlPage = R"rawliteral(
-<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP32 Control</title><style>body{font-family:Arial,sans-serif;text-align:center;margin-top:50px}.button{background-color:#4CAF50;border:none;color:white;padding:15px 32px;text-align:center;text-decoration:none;display:inline-block;font-size:16px;margin:4px 2px;cursor:pointer;border-radius:8px}.button.off{background-color:#f44336}.state{font-size:24px;margin-top:20px}</style></head><body><h1>ESP32 AP Mode Control</h1><p class="state">LED is: <span id="ledStatus">%LED_STATE%</span></p><button class="button %BUTTON_COLOR%" onclick="toggleLED()">Turn %BUTTON_TEXT%</button><script>function toggleLED(){var x=new XMLHttpRequest();x.onreadystatechange=function(){if(this.readyState==4&&this.status==200){document.getElementById("ledStatus").innerHTML=this.responseText;var b=document.querySelector(".button");if(this.responseText==="ON"){b.classList.remove("off");b.innerHTML="Turn OFF"}else{b.classList.add("off");b.innerHTML="Turn ON"}}};x.open("GET","/toggle",true);x.send()}window.onload=function(){var x=new XMLHttpRequest();x.onreadystatechange=function(){if(this.readyState==4&&this.status==200){document.getElementById("ledStatus").innerHTML=this.responseText;var b=document.querySelector(".button");if(this.responseText==="ON"){b.classList.remove("off");b.innerHTML="Turn OFF"}else{b.classList.add("off");b.innerHTML="Turn ON"}}};x.open("GET","/state",true);x.send()};</script></body></html>
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP32 Control</title><style>body{font-family:Arial,sans-serif;text-align:center;margin-top:50px}.button{background-color:#4CAF50;border:none;color:white;padding:15px 32px;text-align:center;text-decoration:none;display:inline-block;font-size:16px;margin:4px 2px;cursor:pointer;border-radius:8px}.button.off{background-color:#f44336}.state{font-size:24px;margin-top:20px}</style></head><body><h1>ESP32 AP Mode BLE Spamming Control</h1><p class="state">LED and BLE spamming is: <span id="ledStatus">%LED_STATE%</span></p><button class="button %BUTTON_COLOR%" onclick="toggleLED()">Turn %BUTTON_TEXT%</button><script>function toggleLED(){var x=new XMLHttpRequest();x.onreadystatechange=function(){if(this.readyState==4&&this.status==200){document.getElementById("ledStatus").innerHTML=this.responseText;var b=document.querySelector(".button");if(this.responseText==="ON"){b.classList.remove("off");b.innerHTML="Turn OFF"}else{b.classList.add("off");b.innerHTML="Turn ON"}}};x.open("GET","/toggle",true);x.send()}window.onload=function(){var x=new XMLHttpRequest();x.onreadystatechange=function(){if(this.readyState==4&&this.status==200){document.getElementById("ledStatus").innerHTML=this.responseText;var b=document.querySelector(".button");if(this.responseText==="ON"){b.classList.remove("off");b.innerHTML="Turn OFF"}else{b.classList.add("off");b.innerHTML="Turn ON"}}};x.open("GET","/state",true);x.send()};</script></body></html>
 )rawliteral";
 
 
@@ -58,11 +58,16 @@ void handleToggle() {
   if (ledState == true) {
     ledState = false;
     BLEDevice::deinit();
+	// Turn lights off while off
+	digitalWrite(12, LOW);
+	digitalWrite(13, LOW);
 	//turn off bluetooth and stop
   } else {
     ledState = true;
-    BLEDevice::init("AirPods 69"); 
-  //name the fake here 
+    BLEDevice::init("AirPods 69");
+	// Turn lights on while spamming
+	digitalWrite(12, HIGH);
+	digitalWrite(13, HIGH);
 	//turn on bluetooth and continue
   }
   digitalWrite(ledPin, ledState);
@@ -102,10 +107,7 @@ void setup() {
 
 
 void loop() {
-  // Turn lights on during "busy" part
   server.handleClient();
-  digitalWrite(12, HIGH);
-  digitalWrite(13, HIGH);
 
   // First generate fake random MAC
   esp_bd_addr_t dummy_addr = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -176,9 +178,7 @@ void loop() {
   Serial.println("Sending Advertisement...");
   pAdvertising->start();
 
-  // Turn lights off while "sleeping"
-  digitalWrite(12, LOW);
-  digitalWrite(13, LOW);
+
   delay(delaySeconds * 1000); // delay for delaySeconds seconds
   pAdvertising->stop();
 }
